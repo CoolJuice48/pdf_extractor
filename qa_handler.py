@@ -393,25 +393,31 @@ Returns:
 """
 def save_qa_extraction(questions: List[QuestionRecord], answers: List[AnswerRecord], output_path: Path) -> Tuple[Path, Path]:
    from pathlib import Path
-   
-   # Create output paths
-   questions_output = output_path / f"{base_name}_Questions.jsonl"
-   answers_output = output_path / f"{base_name}_Answers.jsonl"
-   
+   from pdf_to_jsonl import to_jsonable
+
    # Get base filename without extension
    base_name = output_path.stem  # e.g., "eecs_test3" from "eecs_test3.jsonl"
+   if base_name.endswith('_PageRecords'):
+      base_name = base_name[:-len('_PageRecords')]
+
+   output_dir = output_path.parent
+   # Create output paths
+   questions_output = output_dir / f"{base_name}_Questions.jsonl"
+   answers_output = output_dir / f"{base_name}_Answers.jsonl"
    
+   print(f"Saving to:")
+   print(f"  Questions: {questions_output}")
+   print(f"  Answers: {answers_output}\n")
+
    # Save questions
    with open(questions_output, 'w', encoding='utf-8') as f:
       for q in questions:
-         from pdf_to_jsonl import to_jsonable
          record = to_jsonable(q)
          f.write(json.dumps(record, ensure_ascii=False) + '\n')
    
    # Save answers
    with open(answers_output, 'w', encoding='utf-8') as f:
       for a in answers:
-         from pdf_to_jsonl import to_jsonable
          record = to_jsonable(a)
          f.write(json.dumps(record, ensure_ascii=False) + '\n')
    

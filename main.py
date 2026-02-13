@@ -1,6 +1,4 @@
-from query import read_command_line
-import pdf_to_jsonl
-from qa_handler import parse_document_pages
+from query import run_program
 from pathlib import Path
 
 JSONL_PATH = Path(__file__).parent / "jsonls"
@@ -14,4 +12,4 @@ if __name__ == "__main__":
    input_dir.mkdir(exist_ok=True)
    output_dir.mkdir(exist_ok=True)
    
-   read_command_line(input_dir, output_dir)
+   run_program(input_dir, output_dir)

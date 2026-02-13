@@ -201,8 +201,15 @@ Returns:
 def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
    # Setup
    root = Path(__file__).parent
-   out_dir = input("Enter desired output folder name: ").strip()
-   output_dir = root / 'converted' / Path(out_dir)
+   output_dir = None
+
+   out_dir = input("Enter desired output folder name, or press enter for default: ").strip()
+   base_name = pdf_path.stem
+
+   if out_dir:
+      output_dir = root / 'converted' / Path(out_dir)
+   else:
+      output_dir = root / 'converted' / base_name
    output_dir.mkdir(exist_ok=True)
 
    # Initialize logging
@@ -210,7 +217,8 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
    logger = ConversionLogger(log_file)
 
    # Initialize book record
-   book = DocumentRecord(title=pdf_path.stem)
+   pdf_name = pdf_path.stem
+   book = DocumentRecord(title=pdf_name)
    book_key = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(pdf_path)))
    book_id = IDFactory.book_id(book_key)
    book.source_pdf = str(pdf_path)
@@ -247,9 +255,9 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
       print(line, end="", flush=True)
 
    # Read PDF
-   page_out_dir = output_dir / Path(out_dir + '_PageRecords')
+   page_out_file = output_dir / f"{base_name}_PageRecords'"
    with fitz.open(pdf_path) as pdf:
-      with open(page_out_dir, 'w', encoding='utf-8') as outf:
+      with open(page_out_file, 'w', encoding='utf-8') as outf:
          for page_idx in range(len(pdf)):
 
             # 1) Build PageRecord object
@@ -291,7 +299,7 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
    book.output_jsonl_path = str(output_dir)
    
    # Write DocumentRecord to same directory
-   book_out_file = output_dir / Path(out_dir + '_DocumentRecord')
+   book_out_file = output_dir / f"{base_name}_DocumentRecord"
    with open(book_out_file, 'w', encoding='utf-8') as outf:
       outf.write(json.dumps(to_jsonable(book), indent=2, ensure_ascii=False, sort_keys=True))
 
@@ -299,16 +307,16 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
    print(f"\n\n{'=' * 70}")
    print(f"\nParsing complete")
    print(f"  Pages processed: {page_count}")
-   print(f"  Page file: {page_out_dir}")
+   print(f"  Page file: {page_out_file}")
    print(f"  Document file: {book_out_file}")
-   print(f"  Page file size: {Path(page_out_dir).stat().st_size / (1024*1024):.2f} MB")
+   print(f"  Page file size: {Path(page_out_file).stat().st_size / (1024*1024):.2f} MB")
    print(f"  Document file size: {Path(book_out_file).stat().st_size / (1024*1024):.2f} MB")
    print(f"  Total words: {book.num_words:,}")
    print(f"  Avg. words per page: {book.num_words / page_count:.0f} words/page")
 
    log_completed_conversion(
       logger,
-      pdf_name,
+      base_name,
       str(output_dir),
       page_count=book.num_pages,
       word_count=book.num_words

@@ -219,7 +219,7 @@ def log_new_pdf(logger: ConversionLogger, pdf_path: Path, document_id: str):
    )
    
    logger.add_entry(entry)
-   print(f"📝 Logged new PDF: {pdf_path.stem}")
+   print(f"🗎 Logged new PDF: {pdf_path.stem}")
 
 
 def log_completed_conversion(logger: ConversionLogger, pdf_name: str, 
@@ -242,10 +242,9 @@ def log_completed_conversion(logger: ConversionLogger, pdf_name: str,
    )
    
    if success:
-      print(f"✅ Marked {pdf_name} as converted")
+      print(f"  Marked {pdf_name} as converted")
    else:
-      print(f"⚠️  Could not find log entry for {pdf_name}")
-
+      print(f"✗  Could not find log entry for {pdf_name}")
 
 # ============================================================================
 # EXAMPLE USAGE

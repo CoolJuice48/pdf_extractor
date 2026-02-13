@@ -400,19 +400,11 @@ def show_conversion_details(entry):
 # MAIN MENU
 # ============================================================================
 
-def main():
+def run_program(input_dir: Path, output_dir: Path) -> None:
    """Main entry point."""
 
-   # Setup paths
-   root = Path(__file__).parent
-   pdf_dir = root / "pdfs"
-   converted_dir = root / "converted"
-
-   pdf_dir.mkdir(exist_ok=True)
-   converted_dir.mkdir(exist_ok=True)
-
    # Initialize logger
-   log_file = converted_dir / "conversion_logs.jsonl"
+   log_file = output_dir / "conversion_logs.jsonl"
    logger = ConversionLogger(log_file)
 
    # Main menu loop
@@ -420,7 +412,7 @@ def main():
       print_header("ATRIUM PDF PROCESSOR")
       
       # Count stats
-      all_pdfs = list_pdfs(pdf_dir)
+      all_pdfs = list_pdfs(input_dir)
       converted_count = len(logger.get_all_converted())
       
       print(f"PDFs available: {len(all_pdfs)}")
@@ -448,9 +440,9 @@ def main():
          continue
       
       if choice == 1:
-         show_all_pdfs_menu(pdf_dir, converted_dir, logger)
+         show_all_pdfs_menu(input_dir, output_dir, logger)
       elif choice == 2:
-         show_converted_pdfs_menu(logger, converted_dir)
+         show_converted_pdfs_menu(logger, output_dir)
       elif choice == 3:
          print("\nGoodbye!")
          break
@@ -459,4 +451,4 @@ def main():
          pause()
 
 if __name__ == "__main__":
-   main()
+   run_program()
