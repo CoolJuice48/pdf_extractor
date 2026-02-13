@@ -23,28 +23,6 @@ def _norm(s: str) -> str:
 
 """ -------------------------------------------------------------------------------------------------------- """
 """
-
-"""
-def get_chapter_from_page(page_num: int) -> str:
-    return
-
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-Create a unique problem keystring
-"""
-def create_problem_key(question_num: int, page_num: int) -> str:
-    chapter = get_chapter_from_page(page_num)
-    return f"{chapter}_q{question_num}"
-
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-
-"""
-def generate_qa_id(book_id: str, problem_key: str) -> str:
-    return str(uuid.uuid5(BOOK_NAMESPACE, f"{book_id}:{problem_key}"))
-    
-""" -------------------------------------------------------------------------------------------------------- """
-"""
 Deterministic, namespaced IDs
 """
 class IDFactory:
