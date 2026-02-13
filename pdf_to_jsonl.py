@@ -196,9 +196,9 @@ def group_sections_per_page(page: PageRecord) -> Set[str]:
 Converts the PDF to JSONL format, one page per line. PageRecords and DocumentRecord stored as two
 separate JSONL files in a new directory
 Returns:
-   DocumentRecord object containing metadata about the book and its sections/pages
+   DocumentRecord object id containing metadata about the book and its contents
 """
-def convert_pdf(pdf_input_dir: Path) -> DocumentRecord:
+def convert_pdf(pdf_path: Path) -> str:
    # Establish root directory
    root = Path(__file__).parent
 
@@ -237,7 +237,9 @@ def convert_pdf(pdf_input_dir: Path) -> DocumentRecord:
       print(line, end="", flush=True)
 
    # Initialize book record
-   book = DocumentRecord(title=PDF_PATH.stem)
+   book = DocumentRecord(title=pdf_path.stem)
+   book_key = str(uuid.uuid4(pdf_path))
+   book.id = IDFactory.book_id(book_key)
    book.source_pdf = str(PDF_PATH)
 
    # Read PDF
@@ -300,7 +302,7 @@ def convert_pdf(pdf_input_dir: Path) -> DocumentRecord:
    print(f"  Total words: {book.num_words:,}")
    print(f"  Avg. words per page: {book.num_words / page_count:.0f} words/page")
 
-   return book
+   return book.id
 
 if __name__ == "__main__":
    convert_pdf()
