@@ -4,17 +4,17 @@ import json
 import time
 from pathlib import Path
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import List, Optional, TYPE_CHECKING, Union, Tuple, Set
+from typing import List, Optional, TYPE_CHECKING, Union, Tuple, Set, Dict
 from id_factory import IDFactory
 from regex_parts import has_answer, has_question, has_chapter, has_section
+from conversion_logger import ConversionLogger, log_new_pdf, log_completed_conversion
+
 """ -------------------------------------------------------------------------------------------------------- """
 if TYPE_CHECKING:
    from qa_handler import QuestionRecord, AnswerRecord
 
 QAItem = Union['QuestionRecord', 'AnswerRecord']
 
-global PDF_PATH
-PDF_PATH = Path('/Users/christophertaylor/Documents/Atrium/pdf_processor/pdfs/eecs281_textbook.pdf')
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass
 class DocumentRecord:
@@ -26,7 +26,7 @@ class DocumentRecord:
    author: Optional[str]=None                       # Book author(s)
    publication_year: Optional[int]=None             # Publication year of the book
    references: Optional[List[str]]=None             # List of other documents' book_ids that are referenced
-   source_pdf: Optional[str]=None                   # Original PDF file path for traceability
+   source_pdf: Optional[str]=None                   # Original PDF file name for traceability
    output_jsonl_path: Optional[str]=None            # Path to output JSONL file containing page records
    source_link: Optional[str]=None                  # URL to original source if available
    related_readings: Optional[Set[str]]=None        # Deduplicated UUIDs of related documents
@@ -199,15 +199,25 @@ Returns:
    Tuple of (DocumentRecord ID, output path)
 """
 def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
-   # Establish root directory
+   # Setup
    root = Path(__file__).parent
-
-   # Intake output directory name
    out_dir = input("Enter desired output folder name: ").strip()
-
-   # Define input and output directories
-   output_dir = root / Path(out_dir)
+   output_dir = root / 'converted' / Path(out_dir)
    output_dir.mkdir(exist_ok=True)
+
+   # Initialize logging
+   log_file = root / "converted" / "conversion_logs.jsonl"
+   logger = ConversionLogger(log_file)
+
+   # Initialize book record
+   book = DocumentRecord(title=pdf_path.stem)
+   book_key = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(pdf_path)))
+   book_id = IDFactory.book_id(book_key)
+   book.source_pdf = str(pdf_path)
+
+   # Check if already logged
+   if not logger.get_entry(pdf_name):
+      log_new_pdf(logger, pdf_path, book_id)
 
    print(f"{'=' * 70}\n")
    print(f"Converting PDF to JSONL...\n")
@@ -236,15 +246,9 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
       )
       print(line, end="", flush=True)
 
-   # Initialize book record
-   book = DocumentRecord(title=pdf_path.stem)
-   book_key = str(uuid.uuid4(pdf_path))
-   book.id = IDFactory.book_id(book_key)
-   book.source_pdf = str(PDF_PATH)
-
    # Read PDF
    page_out_dir = output_dir / Path(out_dir + '_PageRecords')
-   with fitz.open(PDF_PATH) as pdf:
+   with fitz.open(pdf_path) as pdf:
       with open(page_out_dir, 'w', encoding='utf-8') as outf:
          for page_idx in range(len(pdf)):
 
@@ -286,7 +290,7 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
 
    book.output_jsonl_path = str(output_dir)
    
-   # Write to same directory
+   # Write DocumentRecord to same directory
    book_out_file = output_dir / Path(out_dir + '_DocumentRecord')
    with open(book_out_file, 'w', encoding='utf-8') as outf:
       outf.write(json.dumps(to_jsonable(book), indent=2, ensure_ascii=False, sort_keys=True))
@@ -302,7 +306,15 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
    print(f"  Total words: {book.num_words:,}")
    print(f"  Avg. words per page: {book.num_words / page_count:.0f} words/page")
 
-   return (book.id, book_out_file)
+   log_completed_conversion(
+      logger,
+      pdf_name,
+      str(output_dir),
+      page_count=book.num_pages,
+      word_count=book.num_words
+   )
+    
+   return (book.id, output_dir)
 
 if __name__ == "__main__":
    convert_pdf()

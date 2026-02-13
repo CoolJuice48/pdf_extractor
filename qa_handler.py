@@ -344,13 +344,13 @@ Hierarchical parsing of document pages to extract questions and answers
 Args:
    document: A DocumentRecord object from convert_pdf()
 Returns:
-   A tuple of (QuestionRecord list, AnswerRecord list) extracted from the document
+   A tuple of (QuestionRecord Path, AnswerRecord Path) extracted from the document
 """
-def parse_document_pages(jsonl_path: Path, book_id: str) -> Tuple[List[QuestionRecord], List[AnswerRecord]]:
+def extract_qas(output_path: Path, book_id: str) -> Tuple[Path, Path]:
    # 1) Load PageRecords from JSONL file
    pages = []
    
-   with open(jsonl_path, 'r', encoding='utf-8') as f:
+   with open(output_path, 'r', encoding='utf-8') as f:
       for line in f:
          if line.strip():
             record = json.loads(line)
@@ -375,8 +375,11 @@ def parse_document_pages(jsonl_path: Path, book_id: str) -> Tuple[List[QuestionR
    
    # 4) Match questions with answers
    questions_out, answers_out = match_questions_and_answers(questions, answers, book_id)
+
+   # 5) Save to output directory
+   questions_path, answers_path = save_qa_extraction(questions_out, answers_out, output_path)
    
-   return questions_out, answers_out
+   return questions_path, answers_path 
 
 """ -------------------------------------------------------------------------------------------------------- """
 """
@@ -388,24 +391,15 @@ Args:
 Returns:
    A tuple of (questions_output_path, answers_output_path)
 """
-def save_qa_extraction(questions: List[QuestionRecord], answers: List[AnswerRecord], input_jsonl_path: str) -> Tuple[str, str]:
+def save_qa_extraction(questions: List[QuestionRecord], answers: List[AnswerRecord], output_path: Path) -> Tuple[Path, Path]:
    from pathlib import Path
    
-   input_path = Path(input_jsonl_path)
-   base_dir = input_path.parent.parent  # Go up from jsonls/ to pdf_processor/
-   
-   # Create output directories
-   questions_dir = base_dir / "questions"
-   answers_dir = base_dir / "answers"
-   questions_dir.mkdir(exist_ok=True)
-   answers_dir.mkdir(exist_ok=True)
+   # Create output paths
+   questions_output = output_path / f"{base_name}_Questions.jsonl"
+   answers_output = output_path / f"{base_name}_Answers.jsonl"
    
    # Get base filename without extension
-   base_name = input_path.stem  # e.g., "eecs_test3" from "eecs_test3.jsonl"
-   
-   # Create output paths
-   questions_output = questions_dir / f"{base_name}_questions.jsonl"
-   answers_output = answers_dir / f"{base_name}_answers.jsonl"
+   base_name = output_path.stem  # e.g., "eecs_test3" from "eecs_test3.jsonl"
    
    # Save questions
    with open(questions_output, 'w', encoding='utf-8') as f:
@@ -421,7 +415,7 @@ def save_qa_extraction(questions: List[QuestionRecord], answers: List[AnswerReco
          record = to_jsonable(a)
          f.write(json.dumps(record, ensure_ascii=False) + '\n')
    
-   return str(questions_output), str(answers_output)
+   return questions_output, answers_output
 
 def load_pages(path: Path):
    pages = []

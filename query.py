@@ -1,29 +1,89 @@
 #!/usr/bin/env python3
+"""
+Query interface for managing PDF conversions and Q&A extraction.
+Uses conversion logging to track which PDFs have been processed.
+"""
+
 import json
 import sys
 import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from difflib import SequenceMatcher
-from word2number import w2n
 from dataclasses import dataclass
 
-""" -------------------------------------------------------------------------------------------------------- """
-
-NUM_RE = re.compile(r"\d+")
+from conversion_logger import ConversionLogger, log_new_pdf, log_completed_conversion
 
 """ -------------------------------------------------------------------------------------------------------- """
-"""
-Helper functions
-"""
+""" Helper functions """
+
 def normalize(s: str) -> str:
    s = s.lower()
-   s = re.sub(r"[^a-z0-9\s]", " ", s)     # kill punctuation
-   s = re.sub(r"\s+", " ", s).strip()    # collapse spaces
+   s = re.sub(r"[^a-z0-9\s]", " ", s)
+   s = re.sub(r"\s+", " ", s).strip()
    return s
 
+def is_int(s: str) -> bool:
+   try:
+      int(s)
+      return True
+   except ValueError:
+      return False
+
+def clean(s: str) -> str:
+   return re.sub(r'[^\w\s]', '', s)
+
+def toalnum(s: str) -> str:
+   return re.sub(r'[^A-Za-z0-9]', '', s)
+
+""" -------------------------------------------------------------------------------------------------------- """
+""" Option class """
+
+@dataclass(frozen=True)
+class Option:
+   number: int
+   label: str
+   extra: str = ""  # Extra info to display
+
+""" -------------------------------------------------------------------------------------------------------- """
+""" Option selector """
+
+def select_option(user_input: str, options: List[Option]) -> Tuple[Optional[Option], str]:
+   s_clean = clean(user_input).strip()
+   s_clean_lower = s_clean.lower()
+
+   if not user_input:
+      return None, "empty input"
+
+   # Numeric fast-path
+   m = toalnum(s_clean)
+   if is_int(m):
+      n = int(m)
+      for opt in options:
+         if opt.number == n:
+               return opt, "matched by number"
+      return None, f"number {n} not in options"
+
+   # Fuzzy match by label
+   best = None
+   best_score = -1.0
+
+   for opt in options:
+      lower = opt.label.lower()
+      score = max(
+         token_set_score(s_clean_lower, lower),
+         seq_score(s_clean_lower, lower)
+      )
+      if score > best_score:
+         best_score = score
+         best = opt
+
+   if best and best_score >= 0.55:
+      return best, f"matched by text (score={best_score:.2f})"
+
+   return None, f"no confident match (best={best_score:.2f})"
+
 def token_set_score(a: str, b: str) -> float:
-   # order-independent overlap + partial tolerance
    ta = set(normalize(a).split())
    tb = set(normalize(b).split())
    if not ta or not tb:
@@ -32,300 +92,291 @@ def token_set_score(a: str, b: str) -> float:
    return overlap / max(len(ta), len(tb))
 
 def seq_score(a: str, b: str) -> float:
-   # typo-tolerant string similarity
    return SequenceMatcher(None, normalize(a), normalize(b)).ratio()
 
-def is_int(s: str) -> bool:
-   try:
-      int(s)
-      return True
-   except ValueError:
-      return False
-   
-def clean(s: str) -> str:
-   return (re.sub(r'[^\w\s]', '', s))
 """ -------------------------------------------------------------------------------------------------------- """
-"""
-Option class
-"""
-@dataclass(frozen=True)
-class Option:
-   number: int
-   label: str
-   label1: str=None
+""" Print and read options """
 
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-Option selector
-Returns:
-
-"""
-def select_option(user_input: str, options: List[Option]) -> Tuple[Optional[Option], str]:
-   s = user_input.strip()
-   if not s:
-      return None, "empty input"
-
-   # 1) numeric fast-path: accept 3, 3., 3), #3, etc.
-   m = NUM_RE.search(s)
-   if m:
-      n = int(m.group())
-      for opt in options:
-         if opt.number == n:
-               return opt, "matched by number"
-      # if they typed a number that isn't an option
-      return None, f"number {n} not in options"
-
-   # 2) fuzzy match by label
-   best = None
-   best_score = -1.0
-
-   for opt in options:
-      # combine two scores:
-      # - token overlap (handles missing words / pluralization-ish / word order)
-      # - sequence similarity (handles typos)
-      score = max(token_set_score(s, opt.label), seq_score(s, opt.label))
-      if score > best_score:
-         best_score = score
-         best = opt
-
-   # threshold tuning: start conservative
-   if best and best_score >= 0.55:
-      return best, f"matched by text (score={best_score:.2f})"
-
-   return None, f"no confident match (best={best_score:.2f})"
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-Print a list of Options
-"""
 def print_options(options: List[Option]) -> None:
    for opt in options:
-      print(f"{opt.number}.) {opt.label}")
-   print("\n")
+      if opt.extra:
+         print(f"{opt.number}.) {opt.label} {opt.extra}")
+      else:
+         print(f"{opt.number}.) {opt.label}")
+
+def read_user_choice(options: List[Option], prompt: str = "Choice >> ") -> Optional[Option]:
+   while True:
+      raw = input(prompt)
+      
+      if not raw.strip():
+         return None
+      
+      opt, why = select_option(raw, options)
+
+      if opt:
+         return opt
+      
+      print(f"Invalid choice: {why}")
+
 """ -------------------------------------------------------------------------------------------------------- """
-"""
-Convert input to int corresponding to Option number
-"""
-def read_user_choice() -> int:
-   opt = clean(input("  >> "))
-   opt = select_option(opt)
-   return opt
+""" PDF management """
+
+def list_pdfs(pdf_dir: Path) -> List[Path]:
+   """Get all PDFs in directory."""
+   return sorted(pdf_dir.glob("*.pdf"))
+
+def get_pdf_status(pdf_path: Path, logger: ConversionLogger) -> str:
+   """Get status emoji for a PDF."""
+   if logger.is_converted(pdf_path.stem):
+      return "✅"
+   elif logger.get_entry(pdf_path.stem):
+      return "🔄"
+   else:
+      return "📄"
+
 """ -------------------------------------------------------------------------------------------------------- """
-"""
+""" Main menu """
 
-"""
-def load_pages() -> dict:
-   """Load all pages into memory."""
-   pages = {}
+def show_pdf_menu(pdf_dir: Path, converted_dir: Path, logger: ConversionLogger):
+   """Show menu of available PDFs with conversion status."""
    
-   with open(, 'r', encoding='utf-8') as f:
-      for line in f:
-         obj = json.loads(line)
-         pages[obj['page_number']] = obj['text']
+   pdfs = list_pdfs(pdf_dir)
    
-   return pages
-
-def search(pages: dict, keyword: str, context: int = 200) -> list:
-   """Search for keyword in all pages."""
-   keyword_lower = keyword.lower()
-   results = []
-   
-   for page_num, text in sorted(pages.items()):
-      if keyword_lower in text.lower():
-         # Find all occurrences
-         text_lower = text.lower()
-         start = 0
-         while True:
-               idx = text_lower.find(keyword_lower, start)
-               if idx == -1:
-                  break
-               
-               # Get context
-               ctx_start = max(0, idx - context)
-               ctx_end = min(len(text), idx + len(keyword) + context)
-               context_str = text[ctx_start:ctx_end]
-               
-               results.append({
-                  'page': page_num,
-                  'index': idx,
-                  'context': context_str
-               })
-               
-               start = idx + 1
-   
-   return results
-
-def show_page(pages: dict, page_num: int, length=None) -> None:
-   """Show a specific page."""
-   if page_num not in pages:
-      print(f"Error: Page {page_num} not found")
+   if not pdfs:
+      print(f"\n⚠️  No PDFs found in {pdf_dir}")
       return
    
-   text = pages[page_num]
-   if length:
-      text = text[:length]
+   # Build options list with status
+   pdf_options = []
+   for i, pdf_path in enumerate(pdfs, start=1):
+      status = get_pdf_status(pdf_path, logger)
+      size_mb = pdf_path.stat().st_size / (1024 * 1024)
+      extra = f"[{size_mb:.1f} MB] {status}"
+      
+      pdf_options.append(Option(i, pdf_path.stem, extra))
    
-   print(f"Page {page_num}:")
-   print(text)
-
-def extract_range(pages: dict, start_page: int, end_page: int, output_file: str) -> None:
-   """Extract pages to file."""
-   with open(output_file, 'w', encoding='utf-8') as f:
-      for page_num in range(start_page, end_page + 1):
-         if page_num in pages:
-               f.write(f"=== PAGE {page_num} ===\n")
-               f.write(pages[page_num])
-               f.write("\n\n")
+   # Display PDFs
+   print("\n" + "="*70)
+   print("AVAILABLE PDFs")
+   print("="*70)
+   print("Status: 📄 = New | 🔄 = Logged | ✅ = Converted\n")
+   print_options(pdf_options)
+   print("\n0.) Go back")
    
-   print(f"Extracted pages {start_page}-{end_page} to {output_file}")
-
-def show_stats(pages: dict) -> None:
-   """Show statistics."""
-   total_chars = sum(len(text) for text in pages.values())
-   total_pages = len(pages)
-   avg_chars = total_chars / total_pages if total_pages > 0 else 0
+   # Get selection
+   choice_str = input("\nSelect PDF number >> ").strip()
    
-   print(f"Statistics:")
-   print(f"  Total pages: {total_pages}")
-   print(f"  Total characters: {total_chars:,}")
-   print(f"  Average chars/page: {avg_chars:.0f}")
-   print(f"  File: {JSONL_FILE}")
-   print(f"  File size: {Path(JSONL_FILE).stat().st_size / (1024*1024):.2f} MB")
-
-def print_help():
-   """Print help message."""
-   print(f"{'=' * 70}\n")
-   print(f">----= PDF Query Tool for file: {JSONL_FILE.stem + '.jsonl'} =----<")
-   print("\nUsage:")
-   print("  search <keyword>             - Search for keyword")
-   print("  page <number>                - Show full page")
-   print("  show <number>                - Show first 2000 chars of page")
-   print("  range <start> <end>          - Show page range")
-   print("  extract <start> <end> <file> - Extract pages to file")
-   print("  stats                        - Show statistics")
-   print("  help                         - Show this help message")
-   print("  quit                         - Exit the program")
-   print(f"\n{'=' * 70}")
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-Options on program startup
-"""
-def print_initial_directory():
-   # Formatting
-   top_spacing = "\n\n"
-   top_border = (f"{'=' * 70}\n")
-   top_text = "Where to you want to go?"
-   bottom_border = (f"\n{'=' * 70}")
-   bottom_spacing = "\n"
-
-   # Options
-   options = [
-      Option(1, "Raw PDFs"),
-      Option(2, "Converted PDFs")
-   ]
-
-   # Printing
-   print(top_spacing)
-   print(top_text)
-   print(top_border) if top_border else None
-   print_options(options)
-   print(bottom_border) if bottom_border else None
-   print(bottom_spacing)
-
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-Options for raw pdfs
-"""
-def print_pdf_list(pdfs: Path):
-   # Formatting
-   top_spacing = "\n\n"
-   top_border = (f"{'=' * 70}\n")
-   top_text = "Choose a PDF:"
-   bottom_border = (f"\n{'=' * 70}")
-   bottom_spacing = "\n"
-
-   # Options
-   options = []
-   for i, pdf in enumerate(pdfs, start=1):
-      size_mb = pdf.stat().st_size / (1024 * 1024)
-      options.append(Option(i, pdf.name, size_mb))
-
-   # Printing
-   print(top_spacing)
-   print(top_text)
-   print(top_border) if top_border else None
-   print_options(options)
-   print(bottom_border) if bottom_border else None
-   print(bottom_spacing)
-""" -------------------------------------------------------------------------------------------------------- """
-"""
-Actions on a PDF
-"""
-def print_pdf_actions(file_name: str):
-   # Formatting
-   top_spacing = "\n\n"
-   top_border = (f"{'=' * 70}\n")
-   top_text = f"""\nFile {file_name} selected
-                    What do you want to do?"""
-   bottom_border = (f"\n{'=' * 70}")
-   bottom_spacing = "\n"
-
-   # Options
-   options = [
-      Option(1, "Convert to JSONL"),
-      Option(2, "Extract questions and answers")
-      Option(3, "Go back"),
-      Option(0, "Search for ... TODO")
-   ]
-
-   # Printing
-   print(top_spacing)
-   print(top_text)
-   print(top_border) if top_border else None
-   print_options(options)
-   print(bottom_border) if bottom_border else None
-   print(bottom_spacing)
-
-
-""" Main command dispatcher. """
-def read_command_line(input_files: List[Path]=None, output_files: List[Path]=None) -> None:
-   # Welcome message
-   print(f"{'=' * 70}\n")
-   print("Welcome!")
+   if not choice_str or choice_str == "0":
+      return
    
-   # Choose stored 
-   if input_files:
-      while True:
-         # Choose raw PDFs or previously converted
-         print_initial_directory()
-         choice = read_user_choice()
+   try:
+      choice = int(choice_str)
+      if choice < 1 or choice > len(pdfs):
+         print("Invalid selection")
+         return
+   except ValueError:
+      print("Please enter a number")
+      return
+   
+   # Get selected PDF
+   selected_pdf = pdfs[choice - 1]
+   
+   # Show actions menu
+   show_pdf_actions(selected_pdf, converted_dir, logger)
 
-         # Select raw PDFs
-         if choice == 1:
-            # List stored PDFs
-            print_pdf_list(pdfs=input_files)
-            pdf_idx = read_user_choice()
-
-            # Path(s) to input PDFs
-            file_path = input_files[pdf_idx]
-            file_name = input_files[pdf_idx].stem
-            
-            # List actions to take on PDF
-            print_pdf_actions(file_name=file_name)
-            action = read_user_choice()
-
-            # 1) Convert PDF to JSONL
-            if action == 1:
-               converted_id, converted_path = convert_pdf(file_path)
-            
-            # 2) Extract questions and answers from converted PDF (alternate route)
-            if action == 2:
-               from qa_handler import parse_document_pages
-               book_id = file_path.__getattribute__("id")
-               jsonl_path = file_path.__getattribute__("source_pdf")
-               parse_document_pages(jsonl_path=jsonl_path, book_id=book_id)
-
-            # 3) Return to menu
-            if choice is 3:
-               pass
-
+def show_pdf_actions(pdf_path: Path, converted_dir: Path, logger: ConversionLogger):
+   """Show available actions for a selected PDF."""
+   
+   pdf_name = pdf_path.stem
+   is_converted = logger.is_converted(pdf_name)
+   
+   print(f"\n{'='*70}")
+   print(f"SELECTED: {pdf_name}")
+   print(f"{'='*70}")
+   
+   # Check status
+   entry = logger.get_entry(pdf_name)
+   if entry:
+      print(f"Status: {'✅ Converted' if entry.converted else '🔄 Logged, not converted'}")
+      if entry.converted:
+         print(f"Output: {entry.output_path}")
+         print(f"Pages: {entry.page_count}")
+         print(f"Words: {entry.word_count:,}")
    else:
+      print(f"Status: 📄 New (not in log)")
+   
+   print()
+   
+   # Build action options
+   actions = []
+   
+   if not is_converted:
+      actions.append(Option(1, "Convert to JSONL"))
+   else:
+      actions.append(Option(1, "Re-convert (overwrite)"))
+   
+   if is_converted:
+      actions.append(Option(2, "Extract Q&A"))
+      actions.append(Option(3, "View conversion details"))
+   
+   actions.append(Option(0, "Go back"))
+   
+   print("Available actions:\n")
+   print_options(actions)
+   
+   # Get action
+   action_str = input("\nAction >> ").strip()
+   
+   if not action_str or action_str == "0":
+      return
+   
+   try:
+      action = int(action_str)
+   except ValueError:
+      print("Please enter a number")
+      return
+   
+   # Execute action
+   if action == 1:
+      # Convert PDF
+      print(f"\nConverting {pdf_name}...")
+      
+      # If not in log yet, add it
+      if not entry:
+         from id_factory import IDFactory
+         doc_id = IDFactory.book_id(pdf_name)
+         log_new_pdf(logger, pdf_path, doc_id)
+      
+      # Run conversion
+      from pdf_to_jsonl import convert_pdf
+      doc_id, output_path = convert_pdf(pdf_path)
+      
+      # Update log (conversion function should do this, but as fallback)
+      # logger.mark_as_converted(pdf_name, str(output_path), ...)
+      
+   elif action == 2 and is_converted:
+      # Extract Q&A
+      print(f"\nExtracting Q&A from {pdf_name}...")
+      
+      from llm_qa_extractor import extract_qa_from_jsonl
+      
+      # Get paths from log entry
+      pages_file = Path(entry.output_path) / f"{pdf_name}_PageRecords"
+      output_file = Path("qas") / f"{pdf_name}_bank.json"
+      output_file.parent.mkdir(exist_ok=True)
+      
+      extract_qa_from_jsonl(
+         str(pages_file),
+         str(output_file),
+         pdf_name
+      )
+      
+      # Update log with question count
+      # TODO: Get question count from extraction
+      
+   elif action == 3 and is_converted:
+      # Show details
+      print(f"\n{'='*70}")
+      print(f"CONVERSION DETAILS: {pdf_name}")
+      print(f"{'='*70}")
+      print(f"Document ID: {entry.document_id}")
+      print(f"Source PDF: {entry.document_file}")
+      print(f"Output: {entry.output_path}")
+      print(f"Pages: {entry.page_count}")
+      print(f"Words: {entry.word_count:,}")
+      print(f"Questions: {entry.question_count or 'Not extracted'}")
+      print()
+      input("Press Enter to continue...")
+
+def show_converted_menu(logger: ConversionLogger):
+   """Show menu of converted PDFs."""
+   
+   converted = logger.get_all_converted()
+   
+   if not converted:
+      print("\n⚠️  No converted PDFs found")
+      input("Press Enter to continue...")
+      return
+   
+   print(f"\n{'='*70}")
+   print("CONVERTED PDFs")
+   print(f"{'='*70}\n")
+   
+   options = []
+   for i, entry in enumerate(converted, start=1):
+      extra = f"({entry.page_count} pages, {entry.word_count:,} words)"
+      options.append(Option(i, entry.document_title, extra))
+   
+   print_options(options)
+   print("\n0.) Go back")
+   
+   # Get selection
+   choice_str = input("\nSelect PDF >> ").strip()
+   
+   if not choice_str or choice_str == "0":
+      return
+   
+   # TODO: Show actions for converted PDF
+
+""" -------------------------------------------------------------------------------------------------------- """
+""" Main entry point """
+
+def main():
+   """Main CLI entry point."""
+   
+   # Setup paths
+   root = Path(__file__).parent
+   pdf_dir = root / "pdfs"
+   converted_dir = root / "converted"
+   
+   pdf_dir.mkdir(exist_ok=True)
+   converted_dir.mkdir(exist_ok=True)
+   
+   # Initialize logger
+   log_file = converted_dir / "conversion_logs.jsonl"
+   logger = ConversionLogger(log_file)
+   
+   # Main menu loop
+   while True:
+      print("\n" + "="*70)
+      print("ATRIUM PDF PROCESSOR")
+      print("="*70)
+      
+      # Count stats
+      all_pdfs = list_pdfs(pdf_dir)
+      converted_count = len(logger.get_all_converted())
+      
+      print(f"\nPDFs available: {len(all_pdfs)}")
+      print(f"PDFs converted: {converted_count}")
+      
+      # Main options
+      main_options = [
+         Option(1, "Browse all PDFs"),
+         Option(2, "View converted PDFs"),
+         Option(3, "Quit")
+      ]
+      
+      print()
+      print_options(main_options)
+      
+      choice_str = input("\nChoice >> ").strip()
+      
+      if not choice_str:
+         continue
+      
+      try:
+         choice = int(choice_str)
+      except ValueError:
+         print("Please enter a number")
+         continue
+      
+      if choice == 1:
+         show_pdf_menu(pdf_dir, converted_dir, logger)
+      elif choice == 2:
+         show_converted_menu(logger)
+      elif choice == 3:
+         print("\n👋 Goodbye!")
+         break
+
+if __name__ == "__main__":
+   main()
