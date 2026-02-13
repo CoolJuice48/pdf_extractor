@@ -1,17 +1,13 @@
-# Create/update .gitignore
-cat >> .gitignore << 'EOF'
-# Data directories
+cat > .gitignore << 'EOF'
 converted/
 jsonls/
 qas/
 pdfs/
-
-# Python
+answers/
+questions/
+temp_backup/
+*.jsonl
 __pycache__/
 *.pyc
 .DS_Store
-
-# Logs
-*.log
-conversion_logs.jsonl
 EOF
