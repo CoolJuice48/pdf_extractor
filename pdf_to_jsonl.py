@@ -38,17 +38,6 @@ class DocumentRecord:
    num_answers: int=0                         # Total number of answers extracted from the book
    num_words: int=0                           # Total number of words in the book (summed from all pages)
    # TODO: Add additional metadata fields as needed
-
-   @classmethod
-   def make(cls, *, title: str, author: Optional[str]=None, publication_year: Optional[int]=None, book_domain: Optional[str]=None):
-      book_key = f"{title}|{author or ''}|{publication_year or ''}"
-      return cls(
-         id=IDFactory.book_id(book_key),
-         title=title,
-         author=author,
-         publication_year=publication_year,
-         book_domain=book_domain
-      )
    
    def build_page_index(self) -> dict:
       """Build a page index for quick lookup."""
@@ -70,18 +59,6 @@ class SectionRecord:
    text_embedding: Optional[List[float]]=None          # Optional text embedding for the section (e.g. from a language model)
    # TODO: Add additional info as needed, e.g. section hierarchy, parent section, etc.
 
-   @classmethod
-   def make(cls, *, book_id: str, section_label: Optional[str], section_title: Optional[str], section_begin: Optional[int], section_end: Optional[int]):
-      section_key = f"{section_label or ''}|{section_title or ''}"
-      return cls(
-         id=IDFactory.section_id(book_id, section_key),
-         book_id=book_id,
-         section_label=section_label,
-         section_title=section_title,
-         section_begin=section_begin,
-         section_end=section_end,
-      )
-
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass
 class PageRecord:
@@ -98,16 +75,6 @@ class PageRecord:
    has_answer: bool=False                           # Whether an answer appears on a page
    text_embedding: Optional[List[float]]=None       # Optional text embedding for the page (e.g. from a language model)
    # TODO: Add additional info as needed, e.g. page layout info, section info, etc.
-
-   @classmethod
-   def make(cls, *, book_id: str, pdf_page_number: int, text: str, word_count: int=0):
-      return cls(
-         id=IDFactory.page_id(book_id, pdf_page_number),
-         book_id=book_id,
-         pdf_page_number=pdf_page_number,
-         text=text,
-         word_count=word_count
-      )
 
 """ -------------------------------------------------------------------------------------------------------- """
 """
