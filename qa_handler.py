@@ -13,6 +13,14 @@ if TYPE_CHECKING:
 
 from id_factory import IDFactory
 
+""" -------------------------------------------------------------------------------------------------------- """
+"""                                      REGEX AND HELPER FUNCTIONS                                          """
+ANSWER_BLOCK_SPLIT = re.compile(r"(?=^\s*\d+\.\s+The correct answer is)", re.MULTILINE)
+ANSWER_START = re.compile(r"^\s*(\d+)\.\s+The correct answer is\s*\(([A-Z])\)\.\s*(.*)", re.DOTALL)
+
+QUESTION_BLOCK_SPLIT = re.compile(r"(?=^\s*\d+\.\s)", re.MULTILINE)
+QUESTION_START = re.compile(r"^\s*(\d+)\.\s*(.*)", re.DOTALL)
+
 CHAPTER_RE = re.compile(r"(Chapter\s+\d+)", re.IGNORECASE)
 
 def chapter_key(title: str) -> str:
@@ -26,12 +34,6 @@ def canonical_problem_key(book_id: str, chapter: str, number: int) -> str:
 def qa_id_from_problem_key(problem_key: str) -> str:
    # deterministic pair id
    return str(uuid.uuid5(uuid.NAMESPACE_URL, problem_key))
-""" -------------------------------------------------------------------------------------------------------- """
-ANSWER_BLOCK_SPLIT = re.compile(r"(?=^\s*\d+\.\s+The correct answer is)", re.MULTILINE)
-ANSWER_START = re.compile(r"^\s*(\d+)\.\s+The correct answer is\s*\(([A-Z])\)\.\s*(.*)", re.DOTALL)
-
-QUESTION_BLOCK_SPLIT = re.compile(r"(?=^\s*\d+\.\s)", re.MULTILINE)
-QUESTION_START = re.compile(r"^\s*(\d+)\.\s*(.*)", re.DOTALL)
 
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass

@@ -18,26 +18,25 @@ PDF_PATH = Path('/Users/christophertaylor/Documents/Atrium/pdf_processor/pdfs/ee
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass
 class DocumentRecord:
-   id: Optional[str]=None                     # Individual book ID (UUID) generated from title/author/year
-   section_ids: Set[str]=field(default_factory=set)       # Set of section_ids in the book
-   page_ids: Set[str]=field(default_factory=set)                    # Set of page_ids in the book
-   book_domain: Optional[str]=None            # Domain or subject area of the book (e.g. "computer science", "physics", etc.)
-   title: Optional[str]=None                  # Book title
-   author: Optional[str]=None                 # Book author(s)
-   publication_year: Optional[int]=None       # Publication year of the book
-   references: Optional[List[str]]=None       # List of other documents' book_ids that are referenced
-   source_pdf: Optional[str]=None             # Original PDF file path for traceability
-   output_jsonl_path: Optional[str]=None      # Path to output JSONL file containing page records
-   source_link: Optional[str]=None            # URL to original source if available
-   related_readings: Optional[Set[str]]=None  # Deduplicated UUIDs of related documents
-   page_start_num: Optional[int]=None         # Starting page number of the book (1-based)
-   page_end_num: Optional[int]=None           # Ending page number of the book (1-based)
-   num_sections: int=0                        # Total number of sections extracted from the book
-   num_pages: int=0                           # Total number of pages in the book
-   num_questions: int=0                       # Total number of questions extracted from the book
-   num_answers: int=0                         # Total number of answers extracted from the book
-   num_words: int=0                           # Total number of words in the book (summed from all pages)
-   # TODO: Add additional metadata fields as needed
+   id: Optional[str]=None                           # Individual book ID (UUID) generated from title/author/year
+   section_ids: Set[str]=field(default_factory=set) # Set of section_ids in the book
+   page_ids: Set[str]=field(default_factory=set)    # Set of page_ids in the book
+   book_domain: Optional[str]=None                  # Domain or subject area of the book (e.g. "computer science", "physics", etc.)
+   title: Optional[str]=None                        # Book title
+   author: Optional[str]=None                       # Book author(s)
+   publication_year: Optional[int]=None             # Publication year of the book
+   references: Optional[List[str]]=None             # List of other documents' book_ids that are referenced
+   source_pdf: Optional[str]=None                   # Original PDF file path for traceability
+   output_jsonl_path: Optional[str]=None            # Path to output JSONL file containing page records
+   source_link: Optional[str]=None                  # URL to original source if available
+   related_readings: Optional[Set[str]]=None        # Deduplicated UUIDs of related documents
+   page_start_num: Optional[int]=None               # Starting page number of the book (1-based)
+   page_end_num: Optional[int]=None                 # Ending page number of the book (1-based)
+   num_sections: int=0                              # Total number of sections extracted from the book
+   num_pages: int=0                                 # Total number of pages in the book
+   num_questions: int=0                             # Total number of questions extracted from the book
+   num_answers: int=0                               # Total number of answers extracted from the book
+   num_words: int=0                                 # Total number of words in the book (summed from all pages)
    
    def build_page_index(self) -> dict:
       """Build a page index for quick lookup."""
@@ -46,18 +45,17 @@ class DocumentRecord:
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass
 class SectionRecord:
-   id: Optional[str]=None                         # Unique section ID (UUID) generated from book_id + section label/title
-   page_ids: Set[str]=field(default_factory=set) # Set of page IDs this section appears in
-   book_id: str=''                            # Book ID this section belongs to
-   question_ids: Optional[Set[str]]=None      # Set of question_ids that belong to this section
-   section_label: Optional[str]=None          # Section label extracted from text (e.g. "1.2")
-   section_title: Optional[str]=None          # Section title extracted from text (e.g. "Section 1.2: Data Structures")
-   section_begin: Optional[int]=None          # Starting page number of the section (1-based)
-   section_end: Optional[int]=None            # Ending page number of the section (1-based)
-   text: str=''                               # Full text of the section (concatenated from all pages it appears on)
-   word_count: int=0                          # Total word count of the section text
-   text_embedding: Optional[List[float]]=None          # Optional text embedding for the section (e.g. from a language model)
-   # TODO: Add additional info as needed, e.g. section hierarchy, parent section, etc.
+   id: Optional[str]=None                           # Unique section ID (UUID) generated from book_id + section label/title
+   page_ids: Set[str]=field(default_factory=set)    # Set of page IDs this section appears in
+   book_id: str=''                                  # Book ID this section belongs to
+   question_ids: Optional[Set[str]]=None            # Set of question_ids that belong to this section
+   section_label: Optional[str]=None                # Section label extracted from text (e.g. "1.2")
+   section_title: Optional[str]=None                # Section title extracted from text (e.g. "Section 1.2: Data Structures")
+   section_begin: Optional[int]=None                # Starting page number of the section (1-based)
+   section_end: Optional[int]=None                  # Ending page number of the section (1-based)
+   text: str=''                                     # Full text of the section (concatenated from all pages it appears on)
+   word_count: int=0                                # Total word count of the section text
+   text_embedding: Optional[List[float]]=None       # Optional text embedding for the section (e.g. from a language model)
 
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass
@@ -74,7 +72,6 @@ class PageRecord:
    has_question: bool=False                         # Whether a question appears on a page
    has_answer: bool=False                           # Whether an answer appears on a page
    text_embedding: Optional[List[float]]=None       # Optional text embedding for the page (e.g. from a language model)
-   # TODO: Add additional info as needed, e.g. page layout info, section info, etc.
 
 """ -------------------------------------------------------------------------------------------------------- """
 """
@@ -201,7 +198,7 @@ separate JSONL files in a new directory
 Returns:
    DocumentRecord object containing metadata about the book and its sections/pages
 """
-def convert_pdf() -> DocumentRecord:
+def convert_pdf(pdf_input_dir: Path) -> DocumentRecord:
    # Establish root directory
    root = Path(__file__).parent
 
@@ -209,9 +206,7 @@ def convert_pdf() -> DocumentRecord:
    out_dir = input("Enter desired output folder name: ").strip()
 
    # Define input and output directories
-   input_dir = root / "pdfs"
    output_dir = root / Path(out_dir)
-   input_dir.mkdir(exist_ok=True)
    output_dir.mkdir(exist_ok=True)
 
    print(f"{'=' * 70}\n")
