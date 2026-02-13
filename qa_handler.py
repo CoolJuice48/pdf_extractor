@@ -39,7 +39,7 @@ class QuestionRecord:
    id: Optional[str]=None                              # Individual question ID (UUID)
    qa_id: str=None                                     # Unique Q&A pair ID (UUID)
    book_id: str=None                                   # Book ID this question belongs to
-   chapter: str=None
+   chapter: str=None                                   # Chapter the question is under
    section_labels: Set[str]=field(default_factory=set) # Section label this question belongs to (e.g. "1.2")
    section_titles: Set[str]=field(default_factory=set) # Section title this question belongs to (e.g. "Section 1.2: Data Structures")
    pdf_page: int | None=None                           # PDF page number where the question is located, earliest page if multiple
@@ -55,7 +55,7 @@ class AnswerRecord:
    id: Optional[str]=None                              # Individual answer ID (UUID)
    qa_id: Optional[str]=None                           # Unique Q&A pair ID (UUID)
    book_id: str=None                                   # Book ID this answer belongs to
-   chapter: str=None
+   chapter: str=None                                   # Chapter the answer is under
    section_labels: Set[str]=field(default_factory=set) # Section label this answer belongs to (e.g. "1.2")
    section_titles: Set[str]=field(default_factory=set) # Section title this answer belongs to (e.g. "Section 1.2: Data Structures")
    pdf_page: int | None=None                           # PDF page number where the answer is located, earliest page if multiple
@@ -65,7 +65,7 @@ class AnswerRecord:
    answer_text: str=None                               # Full text of the answer
    answer_embedding: Optional[List[float]] = None      # Optional text embedding for the answer (e.g. from a language model)
    answer_confidence: Optional[List[float]] = None     # Optional confidence score for the answer (e.g. from a language model)
-   page_ids: Set[str]=field(default_factory=set)     #.  Set of page IDs this answer appears in (for traceability)
+   page_ids: Set[str]=field(default_factory=set)       # Set of page IDs this answer appears in (for traceability)
 
 """ -------------------------------------------------------------------------------------------------------- """
 """

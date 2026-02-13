@@ -229,32 +229,26 @@ def group_sections_per_page(page: PageRecord) -> Set[str]:
 
 """ -------------------------------------------------------------------------------------------------------- """
 """
-Converts the PDF to JSONL format, one line per page
+Converts the PDF to JSONL format, one page per line. PageRecords and DocumentRecord stored as two
+separate JSONL files in a new directory
 Returns:
    DocumentRecord object containing metadata about the book and its sections/pages
 """
 def convert_pdf() -> DocumentRecord:
-   # Prepare input PDF directory
-   pdf_dir = Path.cwd() / "pdfs"
-   pdf_dir.mkdir(exist_ok=True)
-   
-   new_pdf = input("Enter PDF directory (or press Enter for default): ").strip()
-   if new_pdf:
-      global PDF_PATH
-      PDF_PATH = Path(pdf_dir / new_pdf)
+   # Establish root directory
+   root = Path(__file__).parent
 
-   # Prepare output file
-   jsonl_dir = Path.cwd() / "jsonls"
-   jsonl_dir.mkdir(exist_ok=True)
+   # Intake output directory name
+   out_dir = input("Enter desired output folder name: ").strip()
 
-   outfile = input("Enter desired output filename: ").strip()
-   if outfile.__contains__('.jsonl'):
-      output_file = jsonl_dir / outfile
-   else:
-      output_file = jsonl_dir / f"{Path(outfile).stem}.jsonl"
+   # Define input and output directories
+   input_dir = root / "pdfs"
+   output_dir = root / Path(out_dir)
+   input_dir.mkdir(exist_ok=True)
+   output_dir.mkdir(exist_ok=True)
 
    print(f"{'=' * 70}\n")
-   print(f"Converting PDF to JSONL with PyMuPDF and improved gap detection...\n")
+   print(f"Converting PDF to JSONL...\n")
 
    page_count = 0
 
@@ -284,8 +278,10 @@ def convert_pdf() -> DocumentRecord:
    book = DocumentRecord.make(title=PDF_PATH.stem)
    book.source_pdf = str(PDF_PATH)
 
+   # Read PDF
+   page_out_dir = output_dir / Path(out_dir + '_PageRecords')
    with fitz.open(PDF_PATH) as pdf:
-      with open(output_file, 'w', encoding='utf-8') as outf:
+      with open(page_out_dir, 'w', encoding='utf-8') as outf:
          for page_idx in range(len(pdf)):
 
             # 1) Build PageRecord object
@@ -323,15 +319,25 @@ def convert_pdf() -> DocumentRecord:
 
             book.num_pages = page_count
 
-   print(f"\n{'=' * 70}")
+
+   book.output_jsonl_path = str(output_dir)
+   
+   # Write to same directory
+   book_out_file = output_dir / Path(out_dir + '_DocumentRecord')
+   with open(book_out_file, 'w', encoding='utf-8') as outf:
+      b = to_jsonable(book)
+      outf.write(json.dumps(b, ensure_ascii=False) + '\n')
+
+   # Print closing message
+   print(f"\n\n{'=' * 70}")
    print(f"\nComplete!")
    print(f"  PAGES PROCESSED: {page_count}")
-   print(f"  OUTPUT FILE: {output_file}")
-   print(f"  FILE SIZE: {Path(output_file).stat().st_size / (1024*1024):.2f} MB")
+   print(f"  PAGES FILE: {page_out_dir}")
+   print(f"  DOCUMENT FILE: {book_out_file}")
+   print(f"  FILE SIZE: {Path(page_out_dir).stat().st_size / (1024*1024):.2f} MB")
    print(f"  TOTAL WORDS: {book.num_words:,}")
    print(f"  AVERAGE WORDS PER PAGE: {book.num_words / page_count:.0f} words/page")
 
-   book.output_jsonl_path = str(output_file)
    return book
 
 if __name__ == "__main__":
