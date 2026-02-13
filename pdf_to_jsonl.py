@@ -242,7 +242,7 @@ def convert_pdf() -> DocumentRecord:
       print(line, end="", flush=True)
 
    # Initialize book record
-   book = DocumentRecord.make(title=PDF_PATH.stem)
+   book = DocumentRecord(title=PDF_PATH.stem)
    book.source_pdf = str(PDF_PATH)
 
    # Read PDF
@@ -292,18 +292,18 @@ def convert_pdf() -> DocumentRecord:
    # Write to same directory
    book_out_file = output_dir / Path(out_dir + '_DocumentRecord')
    with open(book_out_file, 'w', encoding='utf-8') as outf:
-      b = to_jsonable(book)
-      outf.write(json.dumps(b, ensure_ascii=False) + '\n')
+      outf.write(json.dumps(to_jsonable(book), indent=2, ensure_ascii=False, sort_keys=True))
 
    # Print closing message
    print(f"\n\n{'=' * 70}")
-   print(f"\nComplete!")
-   print(f"  PAGES PROCESSED: {page_count}")
-   print(f"  PAGES FILE: {page_out_dir}")
-   print(f"  DOCUMENT FILE: {book_out_file}")
-   print(f"  FILE SIZE: {Path(page_out_dir).stat().st_size / (1024*1024):.2f} MB")
-   print(f"  TOTAL WORDS: {book.num_words:,}")
-   print(f"  AVERAGE WORDS PER PAGE: {book.num_words / page_count:.0f} words/page")
+   print(f"\nParsing complete")
+   print(f"  Pages processed: {page_count}")
+   print(f"  Page file: {page_out_dir}")
+   print(f"  Document file: {book_out_file}")
+   print(f"  Page file size: {Path(page_out_dir).stat().st_size / (1024*1024):.2f} MB")
+   print(f"  Document file size: {Path(book_out_file).stat().st_size / (1024*1024):.2f} MB")
+   print(f"  Total words: {book.num_words:,}")
+   print(f"  Avg. words per page: {book.num_words / page_count:.0f} words/page")
 
    return book
 
