@@ -8,6 +8,8 @@ from typing import List, Optional, TYPE_CHECKING, Union, Tuple, Set, Dict
 from id_factory import IDFactory
 from regex_parts import has_answer, has_question, has_chapter, has_section
 from conversion_logger import ConversionLogger, log_new_pdf, log_completed_conversion
+from chapter_scanner import scan_pagerecords_for_chapters, save_chapters_jsonl
+from section_scanner import scan_pagerecords_for_sections, save_sections_jsonl
 
 """ -------------------------------------------------------------------------------------------------------- """
 if TYPE_CHECKING:
@@ -38,9 +40,6 @@ class DocumentRecord:
    num_answers: int=0                               # Total number of answers extracted from the book
    num_words: int=0                                 # Total number of words in the book (summed from all pages)
    
-   def build_page_index(self) -> dict:
-      """Build a page index for quick lookup."""
-      return {page.id: page for page in self.pages}
 
 """ -------------------------------------------------------------------------------------------------------- """
 @dataclass
@@ -177,17 +176,77 @@ Returns:
    Set of section keys
 """
 def group_sections_per_page(page: PageRecord) -> Set[str]:
-   text_lower = page.text.lower()
+   import re
+   text = page.text or ''
+   text_lower = text.lower()
    section_ids: Set[str] = set()
 
-   # Simple heuristics
-   if "practice exercises" in text_lower:
-      section_key = "practice exercises"
-      section_ids.add(IDFactory.section_id(page.book_id, section_key))
+   # --- Practice / exercise detection ---
+   practice_keywords = [
+      "practice exercises",
+      "practice problems",
+      "practice questions",
+      "review questions",
+      "review problems",
+      "review exercises",
+      "self-test questions",
+      "self-test problems",
+      "self test questions",
+      "homework problems",
+      "homework questions",
+      "homework exercises",
+      "end of chapter exercises",
+      "end of chapter problems",
+      "chapter exercises",
+      "suggested exercises",
+      "suggested problems",
+      "worked examples",
+      "study questions",
+      "discussion questions",
+      "comprehension questions",
+      "conceptual questions",
+      "thought questions",
+   ]
+   for kw in practice_keywords:
+      if kw in text_lower:
+         section_ids.add(IDFactory.section_id(page.book_id, "practice exercises"))
+         break
 
-   if "exercise solutions" in text_lower:
-      section_key = "exercise solutions"
-      section_ids.add(IDFactory.section_id(page.book_id, section_key))
+   # Standalone headings: "Exercises", "Problems", "Questions" on their own line
+   if IDFactory.section_id(page.book_id, "practice exercises") not in section_ids:
+      if re.search(r'(?m)^(Exercises?|Problems?|Questions?)\s*$', text, re.IGNORECASE):
+         section_ids.add(IDFactory.section_id(page.book_id, "practice exercises"))
+
+   # --- Solution / answer detection ---
+   solution_keywords = [
+      "exercise solutions",
+      "answer key",
+      "answer keys",
+      "solutions to exercises",
+      "solutions to problems",
+      "solution to exercises",
+      "solution to problems",
+      "selected answers",
+      "selected solutions",
+      "answers to exercises",
+      "answers to problems",
+      "answers to questions",
+      "hints and solutions",
+      "solutions to selected",
+      "answers to selected",
+      "solutions to odd-numbered",
+      "answers to odd-numbered",
+      "solutions manual",
+   ]
+   for kw in solution_keywords:
+      if kw in text_lower:
+         section_ids.add(IDFactory.section_id(page.book_id, "exercise solutions"))
+         break
+
+   # Standalone headings: "Solutions", "Answers" on their own line
+   if IDFactory.section_id(page.book_id, "exercise solutions") not in section_ids:
+      if re.search(r'(?m)^(Solutions?|Answers?)\s*$', text, re.IGNORECASE):
+         section_ids.add(IDFactory.section_id(page.book_id, "exercise solutions"))
 
    return section_ids
 
@@ -198,13 +257,16 @@ separate JSONL files in a new directory
 Returns:
    Tuple of (DocumentRecord ID, output path)
 """
-def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
+def convert_pdf(pdf_path: Path, output_dir_name: str = None) -> Tuple[str, Path]:
    # Setup
    root = Path(__file__).parent
    output_dir = None
-
-   out_dir = input("Enter desired output folder name, or press enter for default: ").strip()
    base_name = pdf_path.stem
+
+   if output_dir_name is not None:
+      out_dir = output_dir_name
+   else:
+      out_dir = input("Enter desired output folder name, or press enter for default: ").strip()
 
    if out_dir:
       output_dir = root / 'converted' / Path(out_dir)
@@ -220,12 +282,12 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
    pdf_name = pdf_path.stem
    book = DocumentRecord(title=pdf_name)
    book_key = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(pdf_path)))
-   book_id = IDFactory.book_id(book_key)
+   book.id = IDFactory.book_id(book_key)
    book.source_pdf = str(pdf_path)
 
    # Check if already logged
    if not logger.get_entry(pdf_name):
-      log_new_pdf(logger, pdf_path, book_id)
+      log_new_pdf(logger, pdf_path, book.id)
 
    print(f"{'=' * 70}\n")
    print(f"Converting PDF to JSONL...\n")
@@ -255,13 +317,18 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
       print(line, end="", flush=True)
 
    # Read PDF
-   page_out_file = output_dir / f"{base_name}_PageRecords'"
+   page_out_file = output_dir / f"{base_name}_PageRecords"
+   TOC_SCAN_PAGES = 60
+   toc_pages: List[PageRecord] = []
+
    with fitz.open(pdf_path) as pdf:
       with open(page_out_file, 'w', encoding='utf-8') as outf:
          for page_idx in range(len(pdf)):
 
             # 1) Build PageRecord object
             page = words_to_text(pdf[page_idx], book_id=book.id)
+            if page_idx < TOC_SCAN_PAGES:
+               toc_pages.append(page)
 
             # 2) Add page.id to book.page_ids
             book.page_ids.add(page.id)
@@ -295,6 +362,55 @@ def convert_pdf(pdf_path: Path) -> Tuple[str, Path]:
 
             book.num_pages = page_count
 
+   # --- Simple chapter detection by scanning PageRecords ---
+   print(f"\n{'='*70}")
+   print("DETECTING CHAPTERS")
+   print(f"{'='*70}")
+   
+   try:
+      boundaries = scan_pagerecords_for_chapters(
+         page_out_file,
+         min_chapter=1,
+         max_chapter=50,
+         min_page_gap=5,
+         verbose=True
+      )
+      
+      if boundaries:
+         chapters_out = output_dir / f"{base_name}_Chapters.jsonl"
+         save_chapters_jsonl(boundaries, chapters_out, verbose=True)
+         print(f"\n✓ Chapter detection complete: {len(boundaries)} chapters found")
+      else:
+         print(f"\n⚠ No chapters detected")
+
+   except Exception as e:
+      print(f"\n⚠ Chapter detection failed: {e}")
+      import traceback
+      traceback.print_exc()
+
+   # --- Section detection by scanning PageRecords ---
+   print(f"\n{'='*70}")
+   print("DETECTING SECTIONS")
+   print(f"{'='*70}")
+
+   try:
+      sections = scan_pagerecords_for_sections(
+         page_out_file,
+         max_depth=2,
+         verbose=True
+      )
+
+      if sections:
+         sections_out = output_dir / f"{base_name}_Sections.jsonl"
+         save_sections_jsonl(sections, sections_out, verbose=True)
+         print(f"\n✓ Section detection complete: {len(sections)} sections found")
+      else:
+         print(f"\n⚠ No sections detected")
+
+   except Exception as e:
+      print(f"\n⚠ Section detection failed: {e}")
+      import traceback
+      traceback.print_exc()
 
    book.output_jsonl_path = str(output_dir)
    
